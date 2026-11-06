@@ -1,0 +1,63 @@
+- name: Deploy Campus Notifier
+  hosts: app
+  become: true
+  vars:
+    app_dir: /opt/campus-notifier
+    app_repo: https://github.com/ateteN/devops-2025S-demo.git
+  tasks:
+    - name: Wait for the server
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: Install Docker and Git
+      ansible.builtin.apt:
+        name: [docker.io, python3-docker, git]
+        update_cache: true
+
+    - name: Start Docker
+      ansible.builtin.service:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Get the app code
+      ansible.builtin.git:
+        repo: "{{ app_repo }}"
+        dest: "{{ app_dir }}"
+        version: main
+        force: true
+      register: code
+
+    - name: Create the secret key file on the server
+      ansible.builtin.copy:
+        dest: /etc/campus-notifier.env
+        content: "DJANGO_SECRET_KEY={{ lookup('ansible.builtin.password', '/dev/null', length=50, chars=['ascii_letters', 'digits']) }}\n"
+        mode: "0600"
+        force: false
+      no_log: true
+
+    - name: Build the image
+      community.docker.docker_image:
+        name: campus-notifier
+        tag: "{{ code.after[:7] }}"
+        source: build
+        build:
+          path: "{{ app_dir }}"
+
+    - name: Run the app on port 80
+      community.docker.docker_container:
+        name: campus-notifier
+        image: "campus-notifier:{{ code.after[:7] }}"
+        restart_policy: unless-stopped
+        published_ports: ["80:8000"]
+        env_file: /etc/campus-notifier.env
+        env:
+          DJANGO_DEBUG: "False"
+
+    - name: Check the app is up
+      ansible.builtin.uri:
+        url: http://127.0.0.1/health/
+      register: health
+      until: health.status == 200
+      retries: 12
+      delay: 5

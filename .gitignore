@@ -205,3 +205,19 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+*.tfstate*
+.terraform/
+*.tfvars
+*.pem
+*.key
+
+# --- Infrastructure secrets and local state (never commit) ---
+crash.log
+*.tfvars
+!*.tfvars.example
+id_rsa*
+id_ed25519*
+ansible/inventory.ini
+*.retry
+.vault_pass*
