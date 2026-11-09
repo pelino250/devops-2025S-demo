@@ -6,6 +6,10 @@ resource "aws_ecr_repository" "devops_repo" {
   # This setting makes sure you can't accidentally overwrite an image tag
   image_tag_mutability = "IMMUTABLE"
 
+  encryption_configuration {
+    encryption_type = "KMS"
+  }
+
   # This block enables vulnerability scanning when you push an image
   image_scanning_configuration {
     scan_on_push = true
