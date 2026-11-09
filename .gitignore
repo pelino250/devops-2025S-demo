@@ -3,6 +3,12 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+*.tfstate*
+.terraform/
+*.tfvars
+*.pem
+*.key
+
 # C extensions
 *.so
 
