@@ -1,0 +1,17 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# Local variables and secrets
+*.tfvars
+!terraform.tfvars.example
+
+# SSH keys
+*.pem
+*.key
+id_rsa
+id_ed25519

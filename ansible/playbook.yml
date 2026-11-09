@@ -1,0 +1,162 @@
+---
+# PLAY 1: CONFIGURE DATABASE SERVER
+- name: Configure PostgreSQL database server
+  hosts: db
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: postgres_password
+      prompt: "Choose a password for the campus PostgreSQL user"
+      private: true
+      confirm: true
+
+  tasks:
+    - name: Update apt package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install PostgreSQL and its Python adapter
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - python3-psycopg2
+        state: present
+
+    - name: Find installed PostgreSQL version
+      ansible.builtin.shell: |
+        find /etc/postgresql -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort -V | tail -n 1
+      args:
+        executable: /bin/bash
+      register: postgres_version
+      changed_when: false
+
+    - name: Configure PostgreSQL to listen on network interfaces
+      ansible.builtin.lineinfile:
+        path: "/etc/postgresql/{{ postgres_version.stdout }}/main/postgresql.conf"
+        regexp: "^#?listen_addresses\\s*="
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL
+
+    - name: Allow connections from the local Docker private network
+      ansible.builtin.lineinfile:
+        path: "/etc/postgresql/{{ postgres_version.stdout }}/main/pg_hba.conf"
+        line: "host campus campus 172.16.0.0/12 scram-sha-256"
+        state: present
+      notify: Restart PostgreSQL
+
+    - name: Ensure PostgreSQL is running
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: Create the campus database user
+      community.postgresql.postgresql_user:
+        name: campus
+        password: "{{ postgres_password }}"
+        role_attr_flags: LOGIN
+        state: present
+        login_unix_socket: /var/run/postgresql
+      become_user: postgres
+      no_log: true
+
+    - name: Create the campus database
+      community.postgresql.postgresql_db:
+        name: campus
+        owner: campus
+        state: present
+        login_unix_socket: /var/run/postgresql
+      become_user: postgres
+
+    - name: Apply pending PostgreSQL configuration changes
+      ansible.builtin.meta: flush_handlers
+
+    - name: Verify campus database exists
+      ansible.builtin.command: sudo -u postgres psql -lqt
+      register: database_list
+      changed_when: false
+
+    - name: Display database verification
+      ansible.builtin.debug:
+        msg: "Campus database found: {{ 'campus' in database_list.stdout }}"
+
+  handlers:
+    - name: Restart PostgreSQL
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
+
+# PLAY 2: CONFIGURE APPLICATION SERVER
+- name: Configure Docker and launch Campus Event Notifier
+  hosts: app
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: postgres_password
+      prompt: "Enter the SAME campus PostgreSQL password used in the database play"
+      private: true
+
+  tasks:
+    - name: Update apt package cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install Docker CLI and Python Docker SDK without starting a nested daemon
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - python3-docker
+        state: present
+        policy_rc_d: 101
+
+    - name: Check that the Docker socket is mounted
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+      register: docker_socket
+
+    - name: Require the Docker socket
+      ansible.builtin.assert:
+        that:
+          - docker_socket.stat.exists
+          - docker_socket.stat.issock
+        fail_msg: "Docker socket missing. Check docker_socket_path in Terraform."
+
+    - name: Run Campus Event Notifier
+      community.docker.docker_container:
+        name: campus-notifier
+        image: "{{ app_image }}"
+        state: started
+        pull: true
+        restart_policy: unless-stopped
+        docker_host: "unix:///var/run/docker.sock"
+        published_ports:
+          - "{{ app_port }}:8000"
+        networks:
+          - name: "{{ docker_network }}"
+        env:
+          DB_ENGINE: postgres
+          POSTGRES_DB: campus
+          POSTGRES_USER: campus
+          POSTGRES_PASSWORD: "{{ postgres_password }}"
+          POSTGRES_HOST: "{{ db_private_ip }}"
+          POSTGRES_PORT: "5432"
+
+    - name: Wait for application health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/health/"
+        status_code: 200
+        return_content: true
+      register: health_result
+      until: health_result.status == 200
+      retries: 12
+      delay: 5
+      delegate_to: localhost
+      become: false
+
+    - name: Display health response
+      ansible.builtin.debug:
+        var: health_result.json

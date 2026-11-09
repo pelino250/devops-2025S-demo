@@ -1,1 +1,17 @@
 
+name: Linting
+
+on: [push]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: clone repo
+        uses: actions/checkout@v7
+      - name: setup python
+        uses: actions/setup-python@v7
+      - name: install dependancies
+        run: pip install -r requirements.txt
+      - name: install ruff
+        uses: astral-sh/ruff-action@v4.1.0
+
