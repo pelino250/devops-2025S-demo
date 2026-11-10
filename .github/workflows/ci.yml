@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, 'feat/*', 'feat/**' ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    name: Build, test and scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Django tests
+        # Use Django's test runner; this will be best-effort in CI environment
+        run: python manage.py test --verbosity=1
+
+      - name: Build Docker image
+        run: docker build -t my-app:latest .
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'my-app:latest'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Scan application dependencies (Snyk)
+        uses: snyk/actions/python-3.10@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: 'monitor'
+
+  scan-infrastructure:
+    name: Scan Terraform Code
+    runs-on: ubuntu-latest
+    # Allow this job to run in parallel to build-and-test
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (optional)
+        run: |
+          if [ -n "${{ secrets.AWS_ACCESS_KEY }}" ] && [ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+            echo "AWS credentials available to the job"
+          else
+            echo "AWS credentials not provided; skipping configuration"
+          fi
+        env:
+          AWS_ACCESS_KEY: ${{ secrets.AWS_ACCESS_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Scan Terraform code
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: terraform/
