@@ -14,3 +14,4 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks-docker
+      - id: gitleaks
