@@ -11,6 +11,11 @@ resource "aws_ecr_repository" "devops_repo" {
     scan_on_push = true
   }
 
+  # CKV_AWS_136: encrypt repository images at rest with a KMS key
+  encryption_configuration {
+    encryption_type = "KMS"
+  }
+
   # Tags are good practice for organization
   tags = {
     Environment = "Testing"
