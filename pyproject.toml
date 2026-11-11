@@ -9,6 +9,10 @@ description = "Campus event notification system"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
+dependencies = [
+    "django>=4.2.30",
+    "python-dotenv>=1.0.1",
+]
 
 [tool.ruff]
 # Set the maximum line length to 88 (Black's default)
@@ -115,3 +119,18 @@ line-ending = "lf"
 
 # Set the line length limit for docstrings
 # docstring-code-line-length = 72
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.5",
+    "pytest-django>=4.11.1",
+    "ruff>=0.17.1",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "campus_notifier.settings"
+python_files = ["tests.py", "test_*.py"]
+
+
